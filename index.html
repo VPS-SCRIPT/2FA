@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2FA Authenticator Pro</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- OTPAuth Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/otpauth/9.3.1/otpauth.umd.min.js"></script>
+    <!-- HTML5 QR Code Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    
+    <style>
+        .progress-transition { transition: width 1s linear, background-color 0.3s ease; }
+        .code-transition { transition: color 0.3s ease; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        #qr-modal { backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="bg-slate-100 flex flex-col items-center h-[100dvh] w-screen overflow-hidden font-sans selection:bg-indigo-200">
+
+    <!-- Scrollable App Container -->
+    <div class="w-full max-w-md h-full flex flex-col p-4 overflow-y-auto custom-scroll">
+        
+        <!-- Main White Card -->
+        <div class="bg-white rounded-3xl shadow-xl border border-slate-200 flex flex-col shrink-0 min-h-min mb-4">
+            
+            <div class="p-5 pb-0">
+                <!-- Header -->
+                <div class="flex items-center gap-4 mb-5">
+                    <div class="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm bg-white border border-slate-100 overflow-hidden shrink-0">
+                        <img src="https://raw.githubusercontent.com/VPS-SCRIPT/activevpn.net/main/image/1786624647999.png" 
+                             alt="Logo" class="w-full h-full object-cover"
+                             onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=2FA&background=4f46e5&color=fff&size=128';">
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-800 leading-tight">Authenticator</h2>
+                        <p class="text-[11px] text-slate-500 font-medium">Manage your 2FA accounts</p>
+                    </div>
+                </div>
+
+                <!-- Add Form Box -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 id="form-title" class="text-sm font-bold text-slate-700">အကောင့်အသစ်ထည့်ရန်</h3>
+                        <!-- QR Button -->
+                        <button type="button" id="open-scanner-btn" class="flex items-center gap-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                            Scan QR
+                        </button>
+                    </div>
+
+                    <form id="account-form" class="space-y-3">
+                        <input type="hidden" id="edit-id">
+                        
+                        <input type="text" id="account-name" required
+                            placeholder="Account Name (e.g. YouTube, GitHub)" 
+                            class="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm font-medium transition-all shadow-sm">
+
+                        <div class="relative flex items-center">
+                            <input type="password" id="secret-key" required
+                                placeholder="Secret Key (Base32)" 
+                                class="w-full pl-3.5 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm font-mono uppercase transition-all shadow-sm"
+                                autocomplete="off" spellcheck="false">
+                            
+                            <button type="button" id="toggle-visibility" class="absolute right-2 text-slate-400 hover:text-indigo-600 p-1">
+                                <svg id="eye-slash" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            </button>
+                        </div>
+                        
+                        <p id="error-msg" class="text-red-500 text-xs font-medium hidden">Secret Key အမှားထည့်ထားပါသည်။</p>
+
+                        <div class="flex gap-2 pt-1">
+                            <button type="submit" id="save-btn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-sm shadow-md shadow-indigo-200">
+                                Save Account
+                            </button>
+                            <button type="button" id="cancel-btn" class="hidden flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl text-sm transition-colors">
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="px-5 py-3 shrink-0"><div class="h-px w-full bg-slate-100"></div></div>
+
+            <!-- Saved Accounts List Section -->
+            <div class="px-5 pb-5 space-y-3" id="accounts-container">
+                <div id="empty-state" class="text-center py-6 opacity-60 hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    <p class="text-xs font-medium text-slate-500">မှတ်ထားသော အကောင့်မရှိသေးပါ။</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Section -->
+        <div class="shrink-0 mt-auto pb-2 pt-2 flex flex-col items-center justify-center gap-2">
+            <div class="text-[11px] font-medium text-slate-400 flex items-center justify-center gap-1">
+                Made With <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-red-500 animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg> By: <span class="text-slate-600 font-bold">Jue Htet</span>
+            </div>
+            <a href="https://t.me/Pussy1990" target="_blank" class="flex items-center gap-1.5 text-[11px] font-bold text-sky-600 bg-white hover:bg-sky-50 px-4 py-1.5 rounded-full border border-slate-200 shadow-sm transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8.287 5.906c-.778.324-2.334.994-4.666 2.01-.378.15-.577.298-.595.442-.03.243.275.339.69.47l.175.055c.408.133.958.288 1.243.294.26.006.549-.1.868-.32 2.179-1.471 3.304-2.214 3.374-2.23.05-.012.12-.026.166.016s.042.12.037.141c-.03.129-1.227 1.241-1.846 1.817-.193.18-.33.307-.358.336a8.154 8.154 0 0 1-.188.186c-.38.366-.664.64.015 1.088.327.216.589.393.85.571.284.194.568.387.936.629.093.06.183.125.27.187.331.236.63.448.997.414.214-.02.435-.22.547-.82.265-1.417.786-4.486.906-5.751a1.426 1.426 0 0 0-.013-.315.337.337 0 0 0-.114-.217.526.526 0 0 0-.31-.093c-.3.005-.763.166-2.984 1.09z"/></svg>
+                Contact Telegram
+            </a>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div id="qr-modal" class="fixed inset-0 bg-slate-900/60 z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-white p-5 rounded-3xl shadow-2xl w-full max-w-sm relative">
+            <button type="button" id="close-scanner-btn" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 bg-slate-100 rounded-full p-1.5 z-10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h3 class="text-base font-bold text-slate-800 mb-4 text-center">Scan 2FA QR Code</h3>
+            <div id="reader" class="w-full bg-black rounded-xl overflow-hidden border-2 border-dashed border-indigo-300"></div>
+            <p class="text-[11px] text-slate-500 text-center mt-3">QR Code ကို ကင်မရာနှင့် ချိန်၍ ဖတ်ပါ။</p>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 opacity-0 pointer-events-none -translate-y-4 z-[200] flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+        <span id="toast-msg">အောင်မြင်ပါသည်။</span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('account-form');
+            const nameInput = document.getElementById('account-name');
+            const secretInput = document.getElementById('secret-key');
+            const editIdInput = document.getElementById('edit-id');
+            const errorMsg = document.getElementById('error-msg');
+            const saveBtn = document.getElementById('save-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const formTitle = document.getElementById('form-title');
+            const accountsContainer = document.getElementById('accounts-container');
+            const emptyState = document.getElementById('empty-state');
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+
+            const toggleVisibilityBtn = document.getElementById('toggle-visibility');
+            const eyeSlashIcon = document.getElementById('eye-slash');
+            const eyeOpenIcon = document.getElementById('eye-open');
+            
+            const qrModal = document.getElementById('qr-modal');
+            const openScannerBtn = document.getElementById('open-scanner-btn');
+            const closeScannerBtn = document.getElementById('close-scanner-btn');
+            let html5QrcodeScanner = null;
+
+            let accounts = JSON.parse(localStorage.getItem('2fa_accounts_pro_v5')) || [];
+            let updateInterval;
+
+            // --- Updated Logos Data Map ---
+            const logoMap = {
+                "aws": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnA3PSGqBZb5Mwhr2t5GXmeUlbF3u87XMH2LbIIdl7HA&s=10",
+                "cloudfront": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0Zjj8_t-AF9pwo9gdC9VwHGU2wZL9kw2o9IAUSRT6Cg&s=10",
+                "digitalocean": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQyzOm0QIUfb4hDZwbr_0TlaozAVPc-BFyIIX60Pym3Dw&s=10",
+                "github": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTXDLorxIBvN-inVPuVFcD1jaeKKvLmQDp-3WlySM7caQ&s=10",
+                "cloudflare": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTCC7Q6Bo7Qeppyf11dIOp0IiYG-Zu-VK4Mq_qYhXrUQ&s=10",
+                "facebook": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThy1xZKR-lnUzdYJLN0o55E6qZl-2bqf_XQpIXC3oCBw&s=10",
+                "linode": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRA7UdBXysyM80LmNvklGLzpsYHhrgKLBKSS7RdvZd9QViewZ3hLC__pfQ&s",
+                "vultr": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8HfEfwf3srflZJmMLIQECJHq-cUcB6IEDyL4NRobb7g&s=10",
+                "upcloud": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQv8t4Bl51HgVwwQkTytP9UfdxAfU4COphOfOeLYmLnqg&s=10",
+                "gcp": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcz3hlJmXCsHnuWeCxN74pQzheJ6QiHsK2Xr2_PK1pcQ&s=10",
+                "googlecloud": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcz3hlJmXCsHnuWeCxN74pQzheJ6QiHsK2Xr2_PK1pcQ&s=10",
+                "kamatera": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSji3gQmT-Rgim3tUz_IJD9o15dGe8si09LDF7mm2qQMQ&s=10",
+                "hostinger": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6SJ4JKUzINxH5SYJuZxESg9uzKuTzu4woQgudspJ1Mg&s=10",
+                "readyidc": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQXsnNizfQ667G4ZoFN0IBwMGBG9Cmrx9KkhtxqI3CBrQ&s=10",
+                "lightnode": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTRTwfCj8wJ8KFlDEI96KTgvc3rvytxNSNBlpOdHKWJtA&s=10",
+                "azure": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT_iivtSnoXHEomMtwDDtI9vMeOa0AoGyru2Oy6IoySRQ&s=10",
+                "email": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTAE3NQ66aY4X5-AP0E0ykiH_G-K6ovWPV-csSgFomKaw&s=10",
+                "mail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTAE3NQ66aY4X5-AP0E0ykiH_G-K6ovWPV-csSgFomKaw&s=10",
+                "gmail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTAE3NQ66aY4X5-AP0E0ykiH_G-K6ovWPV-csSgFomKaw&s=10",
+                "microsoft": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtmu0Z0sfC-g-EFKBN8Gn8UmHya4FnH_M-Pph29WPW3A&s=10",
+                "messenger": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTvUWDkkOBe2fkeKw8HOXkiaNeoEWr4_2B3meGXiaA9bg&s",
+                "tiktok": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQwRm2T_qkCPl_mKBXaKVbeSU6kClqlonL5kLsIdEhbNg&s",
+                "telegram": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT7k3GAWGRODv9v_SbtVhiyROU5z3tKWcUwnJiqkLs7TA&s",
+                "youtube": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSdstbvatY0RemK5b83v8T0j8Vm6h1Ahmv9qIPHf5jwtw&s=10"
+            };
+
+            // Levenshtein distance function (Fuzzy Match အတွက်)
+            function getEditDistance(a, b) {
+                if(a.length === 0) return b.length; 
+                if(b.length === 0) return a.length; 
+                var matrix = [];
+                for(var i = 0; i <= b.length; i++){ matrix[i] = [i]; }
+                for(var j = 0; j <= a.length; j++){ matrix[0][j] = j; }
+                for(var i = 1; i <= b.length; i++){
+                    for(var j = 1; j <= a.length; j++){
+                        if(b.charAt(i-1) == a.charAt(j-1)){ matrix[i][j] = matrix[i-1][j-1]; }
+                        else { matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1)); }
+                    }
+                }
+                return matrix[b.length][a.length];
+            }
+
+            // စာလုံးပေါင်းမှားတာပါ အလိုအလျောက်ရှာပေးမည့် Function
+            function getLogoUrl(inputName) {
+                // Remove spaces and special characters for comparison
+                const nameLower = inputName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                let bestMatchKey = null;
+                let lowestDistance = Infinity;
+
+                for (const key of Object.keys(logoMap)) {
+                    // Exact match checking first
+                    if (nameLower.includes(key)) {
+                        return logoMap[key];
+                    }
+                    
+                    // Fuzzy match checking (စာလုံးအများစုတူရင် ဥပမာ- yuotbue vs youtube)
+                    // limit distance based on word length to avoid false positives
+                    const distance = getEditDistance(nameLower, key);
+                    const threshold = Math.floor(key.length / 3) + 1; // ဥပမာ youtube(7) ဆိုရင် 3 လုံးထိလွဲခွင့်ရှိသည်
+
+                    if (distance <= threshold && distance < lowestDistance) {
+                        lowestDistance = distance;
+                        bestMatchKey = key;
+                    }
+                }
+
+                if (bestMatchKey) {
+                    return logoMap[bestMatchKey];
+                }
+
+                // ဘာမှမတူရင် စာလုံးအစနဲ့ Avatar လေး ပြပေးမည်
+                return `https://ui-avatars.com/api/?name=${encodeURIComponent(inputName)}&background=e0e7ff&color=4f46e5&rounded=true&bold=true`;
+            }
+
+            toggleVisibilityBtn.addEventListener('click', () => {
+                if (secretInput.type === 'password') {
+                    secretInput.type = 'text';
+                    eyeSlashIcon.classList.add('hidden');
+                    eyeOpenIcon.classList.remove('hidden');
+                } else {
+                    secretInput.type = 'password';
+                    eyeOpenIcon.classList.add('hidden');
+                    eyeSlashIcon.classList.remove('hidden');
+                }
+            });
+
+            function showToast(message, isError = false) {
+                toastMsg.textContent = message;
+                toast.querySelector('svg').className = isError ? "h-4 w-4 text-red-400" : "h-4 w-4 text-emerald-400";
+                toast.innerHTML = isError ? 
+                    `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg> <span id="toast-msg">${message}</span>` : 
+                    `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> <span id="toast-msg">${message}</span>`;
+                
+                toast.classList.remove('opacity-0', '-translate-y-4');
+                setTimeout(() => { toast.classList.add('opacity-0', '-translate-y-4'); }, 2000);
+            }
+
+            openScannerBtn.addEventListener('click', () => {
+                qrModal.classList.remove('hidden');
+                html5QrcodeScanner = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+                html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess, (err) => {})
+                .catch(err => { showToast("ကင်မရာအသုံးပြုခွင့် မရှိပါ။", true); closeQRModal(); });
+            });
+
+            closeScannerBtn.addEventListener('click', closeQRModal);
+
+            function closeQRModal() {
+                qrModal.classList.add('hidden');
+                if (html5QrcodeScanner) {
+                    html5QrcodeScanner.stop().then(() => html5QrcodeScanner.clear()).catch(e => {});
+                }
+            }
+
+            function onScanSuccess(decodedText) {
+                closeQRModal();
+                try {
+                    let parsedURI = OTPAuth.URI.parse(decodedText);
+                    secretInput.value = parsedURI.secret.base32;
+                    let accountName = parsedURI.label;
+                    if(parsedURI.issuer && !accountName.includes(parsedURI.issuer)) {
+                        accountName = `${parsedURI.issuer} (${accountName})`;
+                    }
+                    nameInput.value = accountName || "Scanned Account";
+                    showToast("QR Code မှတ်သားပြီးပါပြီ!");
+                    saveBtn.focus();
+                    errorMsg.classList.add('hidden');
+                } catch (e) {
+                    showToast("မှားယွင်းသော QR Code ဖြစ်ပါသည်။", true);
+                }
+            }
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                errorMsg.classList.add('hidden');
+                const name = nameInput.value.trim();
+                const secret = secretInput.value.replace(/\s+/g, '').toUpperCase();
+                const editId = editIdInput.value;
+
+                try {
+                    new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) }).generate();
+                } catch (err) {
+                    errorMsg.classList.remove('hidden');
+                    return;
+                }
+
+                if (editId) {
+                    accounts = accounts.map(acc => acc.id === editId ? { ...acc, name, secret } : acc);
+                    showToast('အကောင့်ကို ပြင်ဆင်ပြီးပါပြီ!');
+                } else {
+                    accounts.push({ id: Date.now().toString(), name, secret });
+                    showToast('အကောင့်သစ် ထည့်သွင်းပြီးပါပြီ!');
+                }
+                saveAndRender();
+                resetForm();
+            });
+
+            window.editAccount = (id) => {
+                const account = accounts.find(acc => acc.id === id);
+                if (account) {
+                    nameInput.value = account.name;
+                    secretInput.value = account.secret;
+                    editIdInput.value = account.id;
+                    formTitle.textContent = 'အကောင့် ပြင်ဆင်ရန်';
+                    saveBtn.textContent = 'Update';
+                    cancelBtn.classList.remove('hidden');
+                    
+                    document.querySelector('.custom-scroll').scrollTo({top: 0, behavior: 'smooth'});
+                    nameInput.focus();
+                }
+            };
+
+            cancelBtn.addEventListener('click', resetForm);
+
+            function resetForm() {
+                form.reset();
+                editIdInput.value = '';
+                formTitle.textContent = 'အကောင့်အသစ်ထည့်ရန်';
+                saveBtn.textContent = 'Save Account';
+                cancelBtn.classList.add('hidden');
+                errorMsg.classList.add('hidden');
+                secretInput.type = 'password';
+                eyeOpenIcon.classList.add('hidden');
+                eyeSlashIcon.classList.remove('hidden');
+            }
+
+            window.deleteAccount = (id) => {
+                if (confirm('ဤအကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
+                    accounts = accounts.filter(acc => acc.id !== id);
+                    if(editIdInput.value === id) resetForm();
+                    saveAndRender();
+                    showToast('ဖျက်သိမ်းပြီးပါပြီ');
+                }
+            };
+
+            window.copyCode = (btn, code) => {
+                const el = document.createElement('textarea');
+                el.value = code.replace(/\s+/g, '');
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+
+                showToast('Code ကူးယူပြီးပါပြီ!');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>`;
+                btn.classList.add('text-emerald-500', 'border-emerald-200');
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.classList.remove('text-emerald-500', 'border-emerald-200');
+                }, 1500);
+            };
+
+            function saveAndRender() {
+                localStorage.setItem('2fa_accounts_pro_v5', JSON.stringify(accounts));
+                renderAccountsList();
+            }
+
+            function renderAccountsList() {
+                const cards = accountsContainer.querySelectorAll('.account-card');
+                cards.forEach(card => card.remove());
+
+                if (accounts.length === 0) {
+                    emptyState.classList.remove('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                    accounts.forEach(acc => {
+                        const card = document.createElement('div');
+                        card.className = "account-card fade-in bg-white border border-slate-200 rounded-2xl p-4 relative group shadow-sm";
+                        card.setAttribute('data-secret', acc.secret);
+                        
+                        // Get smart fuzzy matched logo
+                        const accountLogo = getLogoUrl(acc.name);
+
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="flex items-center gap-2.5 overflow-hidden pr-2">
+                                    <img src="${accountLogo}" alt="icon" class="w-7 h-7 rounded-full object-cover shrink-0 bg-white border border-slate-100 shadow-sm" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(acc.name)}&background=e0e7ff&color=4f46e5&rounded=true&bold=true'">
+                                    <h4 class="text-sm font-bold text-slate-800 truncate">${acc.name}</h4>
+                                </div>
+                                <div class="flex gap-1 shrink-0 pt-0.5">
+                                    <button onclick="editAccount('${acc.id}')" class="text-slate-400 hover:text-indigo-600 p-1 bg-slate-50 rounded-md border border-slate-100 transition-colors" title="Edit">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    </button>
+                                    <button onclick="deleteAccount('${acc.id}')" class="text-slate-400 hover:text-red-500 p-1 bg-slate-50 rounded-md border border-slate-100 transition-colors" title="Delete">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="flex justify-between items-end mb-2.5">
+                                <div class="code-text text-3xl font-black text-indigo-600 tracking-[0.2em] code-transition cursor-pointer" title="Click to copy">
+                                    ------
+                                </div>
+                                <button class="copy-action-btn text-slate-400 hover:text-indigo-600 bg-slate-50 p-2 rounded-xl border border-slate-200 mb-1 focus:outline-none transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                </button>
+                            </div>
+                            
+                            <!-- Timer & Progress -->
+                            <div class="flex items-center gap-3">
+                                <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex-1">
+                                    <div class="progress-bar bg-indigo-500 h-full rounded-full progress-transition" style="width: 100%;"></div>
+                                </div>
+                                <span class="time-left text-[11px] font-bold text-slate-500 w-5 text-right shrink-0">30s</span>
+                            </div>
+                        `;
+                        accountsContainer.appendChild(card);
+
+                        const copyBtn = card.querySelector('.copy-action-btn');
+                        const codeDisplay = card.querySelector('.code-text');
+                        copyBtn.addEventListener('click', () => window.copyCode(copyBtn, codeDisplay.textContent));
+                        codeDisplay.addEventListener('click', () => window.copyCode(copyBtn, codeDisplay.textContent));
+                    });
+                }
+                updateAllCodes();
+            }
+
+            function updateAllCodes() {
+                const cards = document.querySelectorAll('.account-card');
+                if (cards.length === 0) return;
+
+                let MathFloor = Math.floor(Date.now() / 1000);
+                let remaining = 30 - (MathFloor % 30);
+                let percent = (remaining / 30) * 100;
+
+                cards.forEach(card => {
+                    const secret = card.getAttribute('data-secret');
+                    const codeDisplay = card.querySelector('.code-text');
+                    const progressBar = card.querySelector('.progress-bar');
+                    const timeLeft = card.querySelector('.time-left');
+
+                    try {
+                        let totp = new OTPAuth.TOTP({ issuer: 'A', label: 'U', algorithm: 'SHA1', digits: 6, period: 30, secret: OTPAuth.Secret.fromBase32(secret) });
+                        let token = totp.generate();
+                        codeDisplay.textContent = token.slice(0, 3) + ' ' + token.slice(3);
+                        timeLeft.textContent = remaining + 's';
+
+                        if (remaining === 30) {
+                            progressBar.style.transition = 'none';
+                            progressBar.style.width = '100%';
+                            setTimeout(() => { progressBar.style.transition = 'width 1s linear, background-color 0.3s ease'; }, 50);
+                        } else {
+                            progressBar.style.width = percent + '%';
+                        }
+
+                        if (remaining <= 5) {
+                            codeDisplay.className = 'code-text text-3xl font-black text-red-500 tracking-[0.2em] code-transition cursor-pointer';
+                            progressBar.className = 'progress-bar bg-red-500 h-full rounded-full progress-transition';
+                            timeLeft.className = 'time-left text-[11px] font-bold text-red-500 w-5 text-right shrink-0';
+                        } else {
+                            codeDisplay.className = 'code-text text-3xl font-black text-indigo-600 tracking-[0.2em] code-transition cursor-pointer';
+                            progressBar.className = 'progress-bar bg-indigo-500 h-full rounded-full progress-transition';
+                            timeLeft.className = 'time-left text-[11px] font-bold text-slate-500 w-5 text-right shrink-0';
+                        }
+                    } catch (err) {
+                        codeDisplay.textContent = 'ERROR';
+                    }
+                });
+            }
+
+            renderAccountsList();
+            if(updateInterval) clearInterval(updateInterval);
+            updateInterval = setInterval(updateAllCodes, 1000);
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cloud Authenticator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- OTPAuth Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/otpauth/9.3.1/otpauth.umd.min.js"></script>
+    <!-- HTML5 QR Code Scanner -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    
+    <style>
+        .progress-transition { transition: width 1s linear, background-color 0.3s ease; }
+        .code-transition { transition: color 0.3s ease; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .glass-modal { backdrop-filter: blur(8px); background-color: rgba(15, 23, 42, 0.6); }
+    </style>
+</head>
+<body class="bg-slate-100 flex flex-col items-center h-[100dvh] w-screen overflow-hidden font-sans selection:bg-indigo-200">
+
+    <!-- ================= 1. AUTHENTICATION SCREEN ================= -->
+    <div id="auth-screen" class="w-full max-w-md h-full flex flex-col justify-center p-4 md:p-6 overflow-y-auto custom-scroll">
+        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-2xl border border-slate-100 flex flex-col fade-in relative overflow-hidden shrink-0">
+            
+            <div class="text-center mb-6">
+                <img src="https://raw.githubusercontent.com/VPS-SCRIPT/2FA/main/Image/1787369262707.png" alt="Logo" class="w-20 h-20 mx-auto rounded-2xl mb-4 shadow-sm object-cover">
+                <h2 class="text-2xl font-extrabold text-slate-800" id="auth-main-title">Cloud Authenticator</h2>
+                <p class="text-[12px] text-slate-500 font-medium mt-1" data-i18n="appDesc">အကောင့်ဝင်ပြီး Device တိုင်းတွင် 2FA များကို အသုံးပြုပါ။</p>
+            </div>
+
+            <!-- Messages -->
+            <div id="auth-error" class="hidden mb-4 p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 text-center leading-relaxed"></div>
+            <div id="auth-success" class="hidden mb-4 p-3 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-xl border border-emerald-100 text-center leading-relaxed"></div>
+
+            <!-- Login / Register Form -->
+            <form id="auth-form" class="space-y-4">
+                <div id="username-group" class="hidden">
+                    <input type="text" id="auth-username" data-i18n-placeholder="userHolder" placeholder="Username (ဥပမာ - Jue Htet)" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors">
+                </div>
+                <div>
+                    <input type="email" id="auth-email" required data-i18n-placeholder="emailHolder" placeholder="Email Address" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors">
+                </div>
+                <div>
+                    <input type="password" id="auth-password" required data-i18n-placeholder="passwordHolder" placeholder="Password" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors">
+                </div>
+                
+                <div class="flex justify-end hidden" id="forgot-pw-link-container">
+                    <button type="button" id="show-forgot-pw-btn" data-i18n="forgotPw" class="text-xs font-bold text-indigo-600 hover:underline focus:outline-none">Forgot Password?</button>
+                </div>
+                
+                <button type="submit" id="auth-submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md shadow-indigo-200 text-sm mt-2">
+                    Login ဝင်ရန်
+                </button>
+            </form>
+
+            <!-- Forgot Password Form (Hidden initially) -->
+            <form id="forgot-pw-form" class="space-y-4 hidden fade-in">
+                <p class="text-xs text-slate-600 font-medium text-center mb-2" data-i18n="forgotDesc">သင့်အကောင့်၏ Email ကို ထည့်ပါ။ Password Reset link ပို့ပေးပါမည်။</p>
+                <div>
+                    <input type="email" id="forgot-email" required data-i18n-placeholder="emailHolder" placeholder="Email Address" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm transition-colors">
+                </div>
+                <button type="submit" id="forgot-submit-btn" data-i18n="resetBtn" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 rounded-xl transition-colors shadow-md text-sm">
+                    Reset Link ပို့ရန်
+                </button>
+                <div class="text-center mt-3">
+                    <button type="button" id="back-to-login-btn" data-i18n="backBtn" class="text-xs font-bold text-slate-500 hover:text-indigo-600 hover:underline focus:outline-none">နောက်သို့ပြန်ဆုတ်မည်</button>
+                </div>
+            </form>
+
+            <div id="auth-bottom-section">
+                <div class="my-6 flex items-center gap-3">
+                    <div class="h-px bg-slate-200 flex-1"></div>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" data-i18n="or">သို့မဟုတ်</span>
+                    <div class="h-px bg-slate-200 flex-1"></div>
+                </div>
+
+                <!-- Google Login Button -->
+                <button id="google-login-btn" type="button" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl transition-colors shadow-sm mb-3 text-sm">
+                    <svg viewBox="0 0 24 24" class="w-5 h-5"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                    <span data-i18n="googleBtn">Google ဖြင့် ဝင်မည်</span>
+                </button>
+
+                <!-- GitHub Login Button -->
+                <button id="github-login-btn" type="button" class="w-full flex items-center justify-center gap-3 bg-[#24292F] hover:bg-[#24292F]/90 text-white font-bold py-3 rounded-xl transition-colors shadow-sm mb-5 text-sm">
+                    <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
+                    <span data-i18n="githubBtn">GitHub ဖြင့် ဝင်မည်</span>
+                </button>
+
+                <p class="text-xs text-slate-500 font-medium text-center">
+                    <span id="auth-toggle-text" data-i18n="noAccount">အကောင့်မရှိသေးဘူးလား?</span>
+                    <button type="button" id="auth-toggle-btn" class="text-indigo-600 hover:underline font-bold ml-1 focus:outline-none">အကောင့်ဖွင့်မည် (Register)</button>
+                </p>
+            </div>
+
+            <!-- Language Switcher -->
+            <div class="mt-6 pt-4 border-t border-slate-100 flex justify-center items-center gap-4">
+                <button type="button" id="lang-my" class="text-xs font-extrabold text-indigo-600 transition-colors focus:outline-none">မြန်မာ</button>
+                <span class="text-xs text-slate-300">|</span>
+                <button type="button" id="lang-en" class="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none">English</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 2. MAIN APP SCREEN ================= -->
+    <div id="app-screen" class="w-full max-w-md h-full flex flex-col p-4 pb-2 md:py-8 overflow-y-auto custom-scroll hidden fade-in">
+        
+        <div class="bg-white rounded-3xl shadow-xl border border-slate-200 flex flex-col shrink-0 min-h-min mb-4 relative">
+            
+            <div class="absolute top-5 right-5 flex items-center gap-2">
+                <div class="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold border border-emerald-100" title="Synced to Cloud">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Cloud
+                </div>
+            </div>
+
+            <div class="p-5 pb-0">
+                <!-- User Profile Header -->
+                <div id="open-profile-btn" class="flex items-center gap-3.5 mb-5 mt-1 p-2 -ml-2 rounded-2xl hover:bg-slate-50 cursor-pointer transition-colors border border-transparent hover:border-slate-100 group">
+                    <div class="w-12 h-12 rounded-full flex items-center justify-center shadow-sm bg-white border-2 border-indigo-100 overflow-hidden shrink-0 group-hover:border-indigo-300 transition-colors relative">
+                        <img id="header-avatar" src="" alt="Avatar" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-hidden pr-2">
+                        <h2 id="header-username" class="text-lg font-extrabold text-slate-800 leading-tight truncate">Cloud User</h2>
+                        <p id="header-email" class="text-[11px] text-slate-500 font-medium truncate">user@email.com</p>
+                    </div>
+                </div>
+
+                <!-- Add Account Form -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 id="form-title" data-i18n="addTitle" class="text-sm font-bold text-slate-700">အကောင့်အသစ်ထည့်ရန်</h3>
+                        <button type="button" id="open-scanner-btn" class="flex items-center gap-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                            <span data-i18n="scanQr">Scan QR</span>
+                        </button>
+                    </div>
+
+                    <form id="account-form" class="space-y-3">
+                        <input type="hidden" id="edit-id">
+                        <input type="text" id="account-name" required data-i18n-placeholder="accNameHolder" placeholder="Account Name (e.g. YouTube, GitHub)" class="w-full px-3.5 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm font-medium transition-all shadow-sm">
+                        <div class="relative flex items-center">
+                            <input type="password" id="secret-key" required placeholder="Secret Key (Base32)" class="w-full pl-3.5 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm font-mono uppercase transition-all shadow-sm" autocomplete="off" spellcheck="false">
+                            <button type="button" id="toggle-visibility" class="absolute right-2 text-slate-400 hover:text-indigo-600 p-1">
+                                <svg id="eye-slash" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            </button>
+                        </div>
+                        <p id="error-msg" data-i18n="invalidKey" class="text-red-500 text-xs font-medium hidden">Secret Key အမှားထည့်ထားပါသည်။</p>
+                        <div class="flex gap-2 pt-1">
+                            <button type="submit" id="save-btn" data-i18n="saveAccBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors text-sm shadow-md shadow-indigo-200">Save Account</button>
+                            <button type="button" id="cancel-btn" class="hidden flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl text-sm transition-colors">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="px-5 py-3 shrink-0"><div class="h-px w-full bg-slate-100"></div></div>
+
+            <!-- List of 2FA Accounts -->
+            <div id="loading-state" class="text-center py-6 hidden">
+                <div class="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <p class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Syncing with Cloud...</p>
+            </div>
+
+            <div class="px-5 pb-5 space-y-3" id="accounts-container">
+                <div id="empty-state" class="text-center py-6 opacity-60 hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    <p class="text-xs font-medium text-slate-500" data-i18n="emptyState">မှတ်ထားသော အကောင့်မရှိသေးပါ။</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 3. PROFILE SETTINGS MODAL ================= -->
+    <div id="profile-modal" class="fixed inset-0 glass-modal z-[150] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col max-h-[90dvh] relative fade-in">
+            <!-- Modal Header -->
+            <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <h3 class="text-base font-bold text-slate-800" data-i18n="profileSettings">Profile Settings</h3>
+                <button type="button" id="close-profile-btn" class="text-slate-400 hover:text-red-500 bg-slate-50 rounded-full p-1.5 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <!-- Modal Body (Scrollable) -->
+            <div class="p-5 overflow-y-auto custom-scroll space-y-6">
+                
+                <!-- Avatar Upload Section -->
+                <div class="flex flex-col items-center">
+                    <div class="relative group cursor-pointer" id="avatar-upload-trigger">
+                        <div class="w-24 h-24 rounded-full border-4 border-slate-50 shadow-md overflow-hidden relative bg-white">
+                            <img id="profile-modal-avatar" src="" alt="Avatar" class="w-full h-full object-cover">
+                            <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                <span class="text-[10px] font-bold text-white uppercase tracking-wider" data-i18n="changeImg">ပြောင်းမည်</span>
+                            </div>
+                        </div>
+                        <input type="file" id="avatar-input" accept="image/*" class="hidden">
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-2" data-i18n="clickImg">ပုံပေါ်တွင်နှိပ်၍ ပုံအသစ်တင်ပါ</p>
+                </div>
+
+                <!-- Update Name -->
+                <form id="update-name-form" class="space-y-2">
+                    <label class="text-xs font-bold text-slate-600 block" data-i18n="editUserLbl">Username ပြင်ရန်</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="edit-username" required class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 rounded-xl text-xs transition-colors shadow-sm">Save</button>
+                    </div>
+                </form>
+
+                <div class="h-px bg-slate-100 w-full"></div>
+
+                <!-- Update Email -->
+                <form id="update-email-form" class="space-y-2">
+                    <label class="text-xs font-bold text-slate-600 block" data-i18n="editEmailLbl">Email Address ပြောင်းရန်</label>
+                    <div class="flex gap-2">
+                        <input type="email" id="edit-email" required class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm">
+                        <button type="submit" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 rounded-xl text-xs transition-colors shadow-sm">Change</button>
+                    </div>
+                    <p class="text-[10px] text-amber-600 font-medium" data-i18n="emailWarn">* Email အသစ်သို့ Verification link ပို့ပေးပါမည်။</p>
+                </form>
+
+                <div class="h-px bg-slate-100 w-full"></div>
+
+                <!-- Update Password -->
+                <form id="update-password-form" class="space-y-3">
+                    <label class="text-xs font-bold text-slate-600 block" data-i18n="editPwLbl">Password အသစ်ပြောင်းရန်</label>
+                    <input type="password" id="new-password" required minlength="6" data-i18n-placeholder="newPwHolder" placeholder="စကားဝှက် အသစ်" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm">
+                    <input type="password" id="confirm-new-password" required minlength="6" data-i18n-placeholder="confirmPwHolder" placeholder="စကားဝှက် အသစ် (အတည်ပြုရန်)" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-sm">
+                    <button type="submit" data-i18n="updatePwBtn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl transition-colors shadow-md text-sm mt-1">
+                        Update Password
+                    </button>
+                </form>
+
+            </div>
+            
+            <!-- Modal Footer (Logout) -->
+            <div class="px-5 py-4 border-t border-slate-100 bg-slate-50 rounded-b-3xl shrink-0">
+                <button type="button" id="logout-btn" class="w-full flex justify-center items-center gap-2 bg-white border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-700 font-bold py-2.5 rounded-xl transition-all text-sm shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    <span data-i18n="signOut">အကောင့်မှ ထွက်မည် (Sign Out)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div id="qr-modal" class="fixed inset-0 glass-modal z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-white p-5 rounded-3xl shadow-2xl w-full max-w-sm relative fade-in">
+            <button type="button" id="close-scanner-btn" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 bg-slate-100 rounded-full p-1.5 z-10 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+            <h3 class="text-base font-bold text-slate-800 mb-4 text-center">Scan 2FA QR Code</h3>
+            <div id="reader" class="w-full bg-black rounded-xl overflow-hidden border-2 border-dashed border-indigo-300"></div>
+            <p class="text-[11px] text-slate-500 text-center mt-3" data-i18n="qrInst">QR Code ကို ကင်မရာနှင့် ချိန်၍ ဖတ်ပါ။</p>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 opacity-0 pointer-events-none -translate-y-4 z-[200] flex items-center gap-2 max-w-[90vw] w-max">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+        <span id="toast-msg">အောင်မြင်ပါသည်။</span>
+    </div>
+
+    <!-- ================= FIREBASE & APP LOGIC ================= -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { 
+            getAuth, onAuthStateChanged, createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, GithubAuthProvider,
+            sendEmailVerification, signOut, sendPasswordResetEmail, 
+            updateProfile, verifyBeforeUpdateEmail, updatePassword 
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // ================= TRANSLATIONS =================
+        const translations = {
+            my: {
+                appDesc: "အကောင့်ဝင်ပြီး Device တိုင်းတွင် 2FA များကို အသုံးပြုပါ။",
+                emailHolder: "Email Address",
+                passwordHolder: "Password",
+                userHolder: "Username (ဥပမာ - Jue Htet)",
+                forgotPw: "Forgot Password?",
+                loginBtn: "Login ဝင်ရန်",
+                registerBtn: "Register လုပ်ရန်",
+                forgotDesc: "သင့်အကောင့်၏ Email ကို ထည့်ပါ။ Password Reset link ပို့ပေးပါမည်။",
+                resetBtn: "Reset Link ပို့ရန်",
+                backBtn: "နောက်သို့ပြန်ဆုတ်မည်",
+                or: "သို့မဟုတ်",
+                googleBtn: "Google ဖြင့် ဝင်မည်",
+                githubBtn: "GitHub ဖြင့် ဝင်မည်",
+                noAccount: "အကောင့်မရှိသေးဘူးလား?",
+                haveAccount: "အကောင့်ရှိပြီးသားလား?",
+                registerLink: "အကောင့်ဖွင့်မည် (Register)",
+                loginLink: "Login ဝင်မည်",
+                
+                // Alerts & Errors
+                verifyNeeded: "ကျေးဇူးပြု၍ သင့် Email ထဲဝင်ပြီး Verification Link ကို အရင်နှိပ်၍ အတည်ပြုပေးပါ။",
+                verifySent: "အကောင့်ဖွင့်ပြီးပါပြီ။ သင့် Email သို့ Verification link ပို့ထားပါသည်။ အီးမေးလ်ထဲဝင်ပြီး အတည်ပြုပြီးမှသာ Login ဝင်ပါ။",
+                googleFail: "Google ဖြင့်ဝင်ရောက်ခြင်း မအောင်မြင်ပါ။",
+                githubFail: "GitHub ဖြင့်ဝင်ရောက်ခြင်း မအောင်မြင်ပါ။",
+                pwResetSent: "Password ပြောင်းရန် Link ကို သင့် Email သို့ ပို့လိုက်ပါပြီ။",
+                wrongCreds: "Email သို့မဟုတ် Password မှားယွင်းနေပါသည်။",
+                emailInUse: "ဤ Email ဖြင့် အကောင့်ဖွင့်ပြီးသား ဖြစ်နေပါသည်။",
+                waitMsg: "စောင့်ဆိုင်းပါ...",
+
+                // App & Profile
+                addTitle: "အကောင့်အသစ်ထည့်ရန်",
+                scanQr: "Scan QR",
+                accNameHolder: "Account Name (e.g. YouTube)",
+                invalidKey: "Secret Key အမှားထည့်ထားပါသည်။",
+                saveAccBtn: "Save Account",
+                emptyState: "မှတ်ထားသော အကောင့်မရှိသေးပါ။",
+                profileSettings: "Profile Settings",
+                changeImg: "ပြောင်းမည်",
+                clickImg: "ပုံပေါ်တွင်နှိပ်၍ ပုံအသစ်တင်ပါ",
+                editUserLbl: "Username ပြင်ရန်",
+                editEmailLbl: "Email Address ပြောင်းရန်",
+                emailWarn: "* Email အသစ်သို့ Verification link ပို့ပေးပါမည်။",
+                editPwLbl: "Password အသစ်ပြောင်းရန်",
+                newPwHolder: "စကားဝှက် အသစ်",
+                confirmPwHolder: "စကားဝှက် အသစ် (အတည်ပြုရန်)",
+                updatePwBtn: "Update Password",
+                signOut: "အကောင့်မှ ထွက်မည် (Sign Out)",
+                qrInst: "QR Code ကို ကင်မရာနှင့် ချိန်၍ ဖတ်ပါ။",
+                copied: "Code ကူးယူပြီးပါပြီ!",
+                savedMsg: "အကောင့်သိမ်းဆည်းပြီးပါပြီ!",
+                deletedMsg: "ဖျက်သိမ်းပြီးပါပြီ"
+            },
+            en: {
+                appDesc: "Login to sync and use your 2FA codes on any device.",
+                emailHolder: "Email Address",
+                passwordHolder: "Password",
+                userHolder: "Username (e.g. John Doe)",
+                forgotPw: "Forgot Password?",
+                loginBtn: "Login",
+                registerBtn: "Register",
+                forgotDesc: "Enter your email address to receive a password reset link.",
+                resetBtn: "Send Reset Link",
+                backBtn: "Go Back",
+                or: "OR",
+                googleBtn: "Sign in with Google",
+                githubBtn: "Sign in with GitHub",
+                noAccount: "Don't have an account?",
+                haveAccount: "Already have an account?",
+                registerLink: "Register here",
+                loginLink: "Login here",
+                
+                // Alerts & Errors
+                verifyNeeded: "Please check your email and click the verification link to log in.",
+                verifySent: "Account created! A verification link has been sent to your email. Please verify it before logging in.",
+                googleFail: "Google sign-in failed.",
+                githubFail: "GitHub sign-in failed.",
+                pwResetSent: "Password reset link has been sent to your email.",
+                wrongCreds: "Invalid Email or Password.",
+                emailInUse: "An account with this Email already exists.",
+                waitMsg: "Please wait...",
+
+                // App & Profile
+                addTitle: "Add New Account",
+                scanQr: "Scan QR",
+                accNameHolder: "Account Name (e.g. YouTube)",
+                invalidKey: "Invalid Secret Key entered.",
+                saveAccBtn: "Save Account",
+                emptyState: "No accounts saved yet.",
+                profileSettings: "Profile Settings",
+                changeImg: "Change",
+                clickImg: "Click image to upload new",
+                editUserLbl: "Edit Username",
+                editEmailLbl: "Change Email Address",
+                emailWarn: "* A verification link will be sent to the new email.",
+                editPwLbl: "Change Password",
+                newPwHolder: "New Password",
+                confirmPwHolder: "Confirm New Password",
+                updatePwBtn: "Update Password",
+                signOut: "Sign Out",
+                qrInst: "Point camera at the QR Code to scan.",
+                copied: "Code copied!",
+                savedMsg: "Account saved successfully!",
+                deletedMsg: "Deleted successfully"
+            }
+        };
+
+        let currentLang = localStorage.getItem('appLang') || 'my';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('appLang', lang);
+
+            // Update UI Toggles
+            const btnMy = document.getElementById('lang-my');
+            const btnEn = document.getElementById('lang-en');
+            if(lang === 'my') {
+                btnMy.className = "text-xs font-extrabold text-indigo-600 transition-colors focus:outline-none";
+                btnEn.className = "text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none";
+            } else {
+                btnEn.className = "text-xs font-extrabold text-indigo-600 transition-colors focus:outline-none";
+                btnMy.className = "text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none";
+            }
+
+            // Translate Static Elements
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if(translations[lang][key]) el.textContent = translations[lang][key];
+            });
+
+            // Translate Placeholders
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                if(translations[lang][key]) el.placeholder = translations[lang][key];
+            });
+
+            // Update dynamic auth button states
+            updateAuthToggleUI();
+        }
+
+        document.getElementById('lang-my').addEventListener('click', () => setLanguage('my'));
+        document.getElementById('lang-en').addEventListener('click', () => setLanguage('en'));
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDMQD-AV5gWVauv63gzJ-CEdwlBXITlWmM",
+            authDomain: "fa-live-cbd40.firebaseapp.com",
+            projectId: "fa-live-cbd40",
+            storageBucket: "fa-live-cbd40.firebasestorage.app",
+            messagingSenderId: "1079409510093",
+            appId: "1:1079409510093:web:f9672027adffd16c65cb84"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // UI Elements
+        const authScreen = document.getElementById('auth-screen');
+        const authForm = document.getElementById('auth-form');
+        const authUsername = document.getElementById('auth-username');
+        const usernameGroup = document.getElementById('username-group');
+        const authEmail = document.getElementById('auth-email');
+        const authPassword = document.getElementById('auth-password');
+        const authSubmitBtn = document.getElementById('auth-submit-btn');
+        const authToggleBtn = document.getElementById('auth-toggle-btn');
+        const authToggleText = document.getElementById('auth-toggle-text');
+        const googleLoginBtn = document.getElementById('google-login-btn');
+        const githubLoginBtn = document.getElementById('github-login-btn');
+        const authError = document.getElementById('auth-error');
+        const authSuccess = document.getElementById('auth-success');
+        
+        const forgotPwLinkContainer = document.getElementById('forgot-pw-link-container');
+        const showForgotPwBtn = document.getElementById('show-forgot-pw-btn');
+        const forgotPwForm = document.getElementById('forgot-pw-form');
+        const forgotEmail = document.getElementById('forgot-email');
+        const forgotSubmitBtn = document.getElementById('forgot-submit-btn');
+        const backToLoginBtn = document.getElementById('back-to-login-btn');
+        const authBottomSection = document.getElementById('auth-bottom-section');
+
+        const appScreen = document.getElementById('app-screen');
+        const headerUsername = document.getElementById('header-username');
+        const headerEmail = document.getElementById('header-email');
+        const headerAvatar = document.getElementById('header-avatar');
+        const openProfileBtn = document.getElementById('open-profile-btn');
+        
+        const profileModal = document.getElementById('profile-modal');
+        const closeProfileBtn = document.getElementById('close-profile-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const profileModalAvatar = document.getElementById('profile-modal-avatar');
+        const avatarUploadTrigger = document.getElementById('avatar-upload-trigger');
+        const avatarInput = document.getElementById('avatar-input');
+        
+        const updateNameForm = document.getElementById('update-name-form');
+        const editUsername = document.getElementById('edit-username');
+        const updateEmailForm = document.getElementById('update-email-form');
+        const editEmail = document.getElementById('edit-email');
+        const updatePasswordForm = document.getElementById('update-password-form');
+        const newPasswordInput = document.getElementById('new-password');
+        const confirmNewPasswordInput = document.getElementById('confirm-new-password');
+
+        const form = document.getElementById('account-form');
+        const nameInput = document.getElementById('account-name');
+        const secretInput = document.getElementById('secret-key');
+        const editIdInput = document.getElementById('edit-id');
+        const errorMsg = document.getElementById('error-msg');
+        const saveBtn = document.getElementById('save-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const formTitle = document.getElementById('form-title');
+        const accountsContainer = document.getElementById('accounts-container');
+        const emptyState = document.getElementById('empty-state');
+        const loadingState = document.getElementById('loading-state');
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-msg');
+
+        let isLoginMode = true;
+        let currentUser = null;
+        let accounts = [];
+        let unsubscribeSnapshot = null;
+        let currentCustomAvatar = null;
+
+        setLanguage(currentLang);
+
+        function showMessage(element, text, isError = true) {
+            element.textContent = text;
+            element.classList.remove('hidden');
+        }
+        function hideMessages() {
+            authError.classList.add('hidden');
+            authSuccess.classList.add('hidden');
+        }
+
+        function getAvatarUrl(user, customBase64 = null) {
+            if (customBase64) return customBase64;
+            if (user.photoURL) return user.photoURL;
+            const name = user.displayName || 'Cloud User';
+            return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=e0e7ff&color=4f46e5&size=200&bold=true`;
+        }
+
+        function updateAuthToggleUI() {
+            if (isLoginMode) {
+                authSubmitBtn.textContent = translations[currentLang].loginBtn;
+                authToggleText.textContent = translations[currentLang].noAccount;
+                authToggleBtn.textContent = translations[currentLang].registerLink;
+            } else {
+                authSubmitBtn.textContent = translations[currentLang].registerBtn;
+                authToggleText.textContent = translations[currentLang].haveAccount;
+                authToggleBtn.textContent = translations[currentLang].loginLink;
+            }
+        }
+
+        authToggleBtn.addEventListener('click', () => {
+            isLoginMode = !isLoginMode;
+            hideMessages();
+            updateAuthToggleUI();
+            
+            if (isLoginMode) {
+                usernameGroup.classList.add('hidden');
+                forgotPwLinkContainer.classList.remove('hidden');
+                authUsername.removeAttribute('required');
+            } else {
+                usernameGroup.classList.remove('hidden');
+                forgotPwLinkContainer.classList.add('hidden');
+                authUsername.setAttribute('required', 'true');
+            }
+        });
+        
+        forgotPwLinkContainer.classList.remove('hidden');
+
+        // AUTH
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            const email = authEmail.value.trim();
+            const password = authPassword.value;
+            const username = authUsername.value.trim();
+            authSubmitBtn.disabled = true;
+            authSubmitBtn.textContent = translations[currentLang].waitMsg;
+
+            try {
+                if (isLoginMode) {
+                    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                    if (!userCredential.user.emailVerified) {
+                        showMessage(authError, translations[currentLang].verifyNeeded);
+                        await signOut(auth);
+                        authSubmitBtn.disabled = false;
+                        updateAuthToggleUI();
+                        return;
+                    }
+                } else {
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    await updateProfile(userCredential.user, { displayName: username });
+                    await sendEmailVerification(userCredential.user);
+                    showMessage(authSuccess, translations[currentLang].verifySent, false);
+                    await signOut(auth); 
+                    isLoginMode = true;
+                    updateAuthToggleUI();
+                    usernameGroup.classList.add('hidden');
+                    forgotPwLinkContainer.classList.remove('hidden');
+                }
+            } catch (error) {
+                let errText = error.message.replace('Firebase: ', '');
+                if (errText.includes('invalid-credential')) errText = translations[currentLang].wrongCreds;
+                if (errText.includes('email-already-in-use')) errText = translations[currentLang].emailInUse;
+                showMessage(authError, errText);
+            } finally {
+                authSubmitBtn.disabled = false;
+                updateAuthToggleUI();
+            }
+        });
+
+        googleLoginBtn.addEventListener('click', async () => {
+            const provider = new GoogleAuthProvider();
+            hideMessages();
+            try {
+                const res = await signInWithPopup(auth, provider);
+                if(!res.user.displayName) await updateProfile(res.user, { displayName: "Google User" });
+            } catch (error) { showMessage(authError, translations[currentLang].googleFail); }
+        });
+
+        githubLoginBtn.addEventListener('click', async () => {
+            const provider = new GithubAuthProvider();
+            hideMessages();
+            try {
+                const res = await signInWithPopup(auth, provider);
+                if(!res.user.displayName) await updateProfile(res.user, { displayName: "GitHub User" });
+            } catch (error) { showMessage(authError, translations[currentLang].githubFail); }
+        });
+
+        showForgotPwBtn.addEventListener('click', () => {
+            hideMessages();
+            authForm.classList.add('hidden');
+            authBottomSection.classList.add('hidden');
+            document.getElementById('auth-main-title').textContent = "Reset Password";
+            forgotPwForm.classList.remove('hidden');
+            forgotEmail.value = authEmail.value; 
+        });
+
+        backToLoginBtn.addEventListener('click', () => {
+            hideMessages();
+            forgotPwForm.classList.add('hidden');
+            authForm.classList.remove('hidden');
+            authBottomSection.classList.remove('hidden');
+            document.getElementById('auth-main-title').textContent = "Cloud Authenticator";
+        });
+
+        forgotPwForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            const email = forgotEmail.value.trim();
+            forgotSubmitBtn.disabled = true;
+            forgotSubmitBtn.textContent = translations[currentLang].waitMsg;
+            try {
+                await sendPasswordResetEmail(auth, email);
+                showMessage(authSuccess, translations[currentLang].pwResetSent, false);
+                forgotEmail.value = '';
+            } catch (error) { showMessage(authError, "Error: " + error.message.replace('Firebase: ', ''));
+            } finally {
+                forgotSubmitBtn.disabled = false;
+                forgotSubmitBtn.textContent = translations[currentLang].resetBtn;
+            }
+        });
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                if (user.providerData.some(p => p.providerId === 'password') && !user.emailVerified) {
+                    appScreen.classList.add('hidden'); authScreen.classList.remove('hidden'); return;
+                }
+                currentUser = user; currentCustomAvatar = null;
+                try {
+                    const profileDoc = await getDoc(doc(db, 'users', user.uid, 'profile', 'info'));
+                    if(profileDoc.exists() && profileDoc.data().avatarBase64) currentCustomAvatar = profileDoc.data().avatarBase64;
+                } catch(e) {}
+                updateAppHeaderUI();
+                authScreen.classList.add('hidden'); appScreen.classList.remove('hidden');
+                fetchCloudData();
+            } else {
+                currentUser = null; currentCustomAvatar = null; accounts = [];
+                if(unsubscribeSnapshot) unsubscribeSnapshot();
+                appScreen.classList.add('hidden'); authScreen.classList.remove('hidden'); profileModal.classList.add('hidden');
+                authEmail.value = ''; authPassword.value = ''; renderAccountsList();
+            }
+        });
+
+        function updateAppHeaderUI() {
+            if(!currentUser) return;
+            auth.currentUser.reload().then(() => {
+                const user = auth.currentUser;
+                const displayName = user.displayName || 'Cloud User';
+                headerUsername.textContent = displayName;
+                headerEmail.textContent = user.email;
+                editUsername.value = displayName;
+                editEmail.value = user.email;
+                const avatarUrl = getAvatarUrl(user, currentCustomAvatar);
+                headerAvatar.src = avatarUrl;
+                profileModalAvatar.src = avatarUrl;
+            });
+        }
+
+        openProfileBtn.addEventListener('click', () => profileModal.classList.remove('hidden'));
+        closeProfileBtn.addEventListener('click', () => { profileModal.classList.add('hidden'); newPasswordInput.value = ''; confirmNewPasswordInput.value = ''; });
+        logoutBtn.addEventListener('click', () => signOut(auth));
+
+        updateNameForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newName = editUsername.value.trim();
+            if(!newName || !currentUser) return;
+            const btn = updateNameForm.querySelector('button');
+            btn.disabled = true; btn.textContent = '...';
+            try {
+                await updateProfile(currentUser, { displayName: newName });
+                showToast("Username updated");
+                updateAppHeaderUI(); 
+            } catch(e) { showToast("Error", true); } 
+            finally { btn.disabled = false; btn.textContent = 'Save'; }
+        });
+
+        updateEmailForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newEmail = editEmail.value.trim();
+            if(!newEmail || !currentUser || newEmail === currentUser.email) return;
+            const btn = updateEmailForm.querySelector('button');
+            btn.disabled = true; btn.textContent = '...';
+            try {
+                await verifyBeforeUpdateEmail(currentUser, newEmail);
+                showToast("Verification link sent to new email.");
+            } catch(e) { showToast("Error. Please Sign Out and login again.", true); } 
+            finally { btn.disabled = false; btn.textContent = 'Change'; }
+        });
+
+        updatePasswordForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newPw = newPasswordInput.value; const confirmPw = confirmNewPasswordInput.value;
+            if(!currentUser) return;
+            if(newPw !== confirmPw) { showToast("Passwords do not match", true); return; }
+            const btn = updatePasswordForm.querySelector('button');
+            btn.disabled = true; btn.textContent = '...';
+            try {
+                await updatePassword(currentUser, newPw);
+                showToast("Password updated");
+                newPasswordInput.value = ''; confirmNewPasswordInput.value = '';
+            } catch(e) { showToast("Error. Please Sign Out and login again.", true); } 
+            finally { btn.disabled = false; btn.textContent = translations[currentLang].updatePwBtn; }
+        });
+
+        avatarUploadTrigger.addEventListener('click', () => avatarInput.click());
+        avatarInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if(!file || !currentUser || !file.type.startsWith('image/')) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = async () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width, height = img.height;
+                    if (width > height && width > 200) { height *= 200 / width; width = 200; } 
+                    else if (height > 200) { width *= 200 / height; height = 200; }
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    const base64String = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    currentCustomAvatar = base64String;
+                    updateAppHeaderUI();
+                    
+                    try {
+                        await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'info'), { avatarBase64: base64String }, { merge: true });
+                        showToast("Profile image updated");
+                    } catch(err) { showToast("Failed to save image", true); }
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 2FA LOGIC
+        function fetchCloudData() {
+            if (!currentUser) return;
+            loadingState.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+            const userAccountsRef = collection(db, 'users', currentUser.uid, '2fa_keys');
+            unsubscribeSnapshot = onSnapshot(userAccountsRef, (snapshot) => {
+                accounts = [];
+                snapshot.forEach((doc) => accounts.push({ id: doc.id, ...doc.data() }));
+                loadingState.classList.add('hidden');
+                renderAccountsList();
+            });
+        }
+
+        async function saveAccountToCloud(accountData, id = null) {
+            if (!currentUser) return;
+            const docId = id || Date.now().toString();
+            try {
+                await setDoc(doc(db, 'users', currentUser.uid, '2fa_keys', docId), { name: accountData.name, secret: accountData.secret });
+                showToast(translations[currentLang].savedMsg);
+            } catch (error) { showToast("Failed to save", true); }
+        }
+
+        window.deleteAccount = async (id) => {
+            if (!currentUser) return;
+            if (confirm('Delete this account?')) {
+                try {
+                    await deleteDoc(doc(db, 'users', currentUser.uid, '2fa_keys', id));
+                    if(editIdInput.value === id) resetForm();
+                    showToast(translations[currentLang].deletedMsg);
+                } catch (error) { showToast("Error", true); }
+            }
+        };
+
+        document.getElementById('toggle-visibility').addEventListener('click', () => {
+            if (secretInput.type === 'password') {
+                secretInput.type = 'text';
+                document.getElementById('eye-slash').classList.add('hidden');
+                document.getElementById('eye-open').classList.remove('hidden');
+            } else {
+                secretInput.type = 'password';
+                document.getElementById('eye-open').classList.add('hidden');
+                document.getElementById('eye-slash').classList.remove('hidden');
+            }
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            errorMsg.classList.add('hidden');
+            const name = nameInput.value.trim();
+            const secret = secretInput.value.replace(/\s+/g, '').toUpperCase();
+            const editId = editIdInput.value;
+            try { new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) }).generate(); } 
+            catch (err) { errorMsg.classList.remove('hidden'); return; }
+            saveAccountToCloud({ name, secret }, editId ? editId : null);
+            resetForm();
+        });
+
+        window.editAccount = (id) => {
+            const account = accounts.find(acc => acc.id === id);
+            if (account) {
+                nameInput.value = account.name;
+                secretInput.value = account.secret;
+                editIdInput.value = account.id;
+                formTitle.textContent = 'Edit';
+                saveBtn.textContent = 'Update';
+                cancelBtn.classList.remove('hidden');
+                document.querySelector('#app-screen .custom-scroll').scrollTo({top: 0, behavior: 'smooth'});
+                nameInput.focus();
+            }
+        };
+
+        cancelBtn.addEventListener('click', resetForm);
+        function resetForm() {
+            form.reset(); editIdInput.value = '';
+            formTitle.textContent = translations[currentLang].addTitle;
+            saveBtn.textContent = translations[currentLang].saveAccBtn;
+            cancelBtn.classList.add('hidden'); errorMsg.classList.add('hidden');
+            secretInput.type = 'password';
+            document.getElementById('eye-open').classList.add('hidden');
+            document.getElementById('eye-slash').classList.remove('hidden');
+        }
+
+        window.copyCode = (btn, code) => {
+            const el = document.createElement('textarea');
+            el.value = code.replace(/\s+/g, '');
+            document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
+            showToast(translations[currentLang].copied);
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>`;
+            btn.classList.add('text-emerald-500', 'border-emerald-200');
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.classList.remove('text-emerald-500', 'border-emerald-200'); }, 1500);
+        };
+
+        function showToast(message, isError = false) {
+            toastMsg.textContent = message;
+            toast.querySelector('svg').className = isError ? "h-4 w-4 text-red-400 shrink-0" : "h-4 w-4 text-emerald-400 shrink-0";
+            toast.innerHTML = isError ? 
+                `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg> <span id="toast-msg">${message}</span>` : 
+                `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> <span id="toast-msg">${message}</span>`;
+            toast.classList.remove('opacity-0', '-translate-y-4');
+            setTimeout(() => { toast.classList.add('opacity-0', '-translate-y-4'); }, 2500);
+        }
+
+
+        // ================= LOGO AUTO-DETECTION SYSTEM =================
+        function getLogoUrl(inputName) {
+            if (!inputName) return '';
+            
+            // Remove spaces, symbols and convert to lowercase (e.g. "Digital Ocean!" -> "digitalocean")
+            const nameLower = inputName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            
+            const logos = {
+                "aws": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnA3PSGqBZb5Mwhr2t5GXmeUlbF3u87XMH2LbIIdl7HA&s=10",
+                "amazon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnA3PSGqBZb5Mwhr2t5GXmeUlbF3u87XMH2LbIIdl7HA&s=10",
+                "cloudfront": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0Zjj8_t-AF9pwo9gdC9VwHGU2wZL9kw2o9IAUSRT6Cg&s=10",
+                "digitalocean": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQyzOm0QIUfb4hDZwbr_0TlaozAVPc-BFyIIX60Pym3Dw&s=10",
+                "github": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTXDLorxIBvN-inVPuVFcD1jaeKKvLmQDp-3WlySM7caQ&s=10",
+                "cloudflare": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTCC7Q6Bo7Qeppyf11dIOp0IiYG-Zu-VK4Mq_qYhXrUQ&s=10",
+                "facebook": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcThy1xZKR-lnUzdYJLN0o55E6qZl-2bqf_XQpIXC3oCBw&s=10",
+                "linode": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRA7UdBXysyM80LmNvklGLzpsYHhrgKLBKSS7RdvZd9QViewZ3hLC__pfQ&s",
+                "vultr": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8HfEfwf3srflZJmMLIQECJHq-cUcB6IEDyL4NRobb7g&s=10",
+                "upcloud": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQv8t4Bl51HgVwwQkTytP9UfdxAfU4COphOfOeLYmLnqg&s=10",
+                "gcp": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcz3hlJmXCsHnuWeCxN74pQzheJ6QiHsK2Xr2_PK1pcQ&s=10",
+                "google": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTcz3hlJmXCsHnuWeCxN74pQzheJ6QiHsK2Xr2_PK1pcQ&s=10",
+                "kamatera": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSji3gQmT-Rgim3tUz_IJD9o15dGe8si09LDF7mm2qQMQ&s=10",
+                "hostinger": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6SJ4JKUzINxH5SYJuZxESg9uzKuTzu4woQgudspJ1Mg&s=10",
+                "readyidc": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQXsnNizfQ667G4ZoFN0IBwMGBG9Cmrx9KkhtxqI3CBrQ&s=10",
+                "lightnode": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTRTwfCj8wJ8KFlDEI96KTgvc3rvytxNSNBlpOdHKWJtA&s=10",
+                "discord": "https://cdn.iconscout.com/icon/free/png-256/discord-2474808-2056094.png",
+                "paypal": "https://cdn.iconscout.com/icon/free/png-256/paypal-19-226458.png",
+                "binance": "https://cdn.iconscout.com/icon/free/png-256/binance-4240361-3518335.png",
+                "apple": "https://cdn.iconscout.com/icon/free/png-256/apple-148-761665.png",
+                "telegram": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/1024px-Telegram_logo.svg.png",
+                "twitter": "https://cdn.iconscout.com/icon/free/png-256/twitter-241-721979.png",
+                "vk": "https://cdn.iconscout.com/icon/free/png-256/vk-22-226569.png"
+            };
+
+            for(let key in logos) {
+                if(nameLower.includes(key)) return logos[key];
+            }
+            
+            // Name မတူရင် ပုံသေ (Default) စာလုံးပါတဲ့ပုံ ထုတ်ပေးမည်
+            return `https://ui-avatars.com/api/?name=${encodeURIComponent(inputName)}&background=e0e7ff&color=4f46e5&rounded=true&bold=true`;
+        }
+        // ==========================================================
+
+        function renderAccountsList() {
+            const cards = accountsContainer.querySelectorAll('.account-card');
+            cards.forEach(card => card.remove());
+
+            if (accounts.length === 0) {
+                emptyState.classList.remove('hidden');
+            } else {
+                emptyState.classList.add('hidden');
+                accounts.forEach(acc => {
+                    const card = document.createElement('div');
+                    card.className = "account-card fade-in bg-white border border-slate-200 rounded-2xl p-4 relative group shadow-sm";
+                    card.setAttribute('data-secret', acc.secret);
+                    
+                    card.innerHTML = `
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center gap-2.5 overflow-hidden pr-2">
+                                <img src="${getLogoUrl(acc.name)}" alt="icon" class="w-7 h-7 rounded-full object-cover shrink-0 bg-white border border-slate-100 shadow-sm" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(acc.name)}&background=e0e7ff&color=4f46e5&rounded=true&bold=true'">
+                                <h4 class="text-sm font-bold text-slate-800 truncate">${acc.name}</h4>
+                            </div>
+                            <div class="flex gap-1 shrink-0 pt-0.5">
+                                <button onclick="editAccount('${acc.id}')" class="text-slate-400 hover:text-indigo-600 p-1 bg-slate-50 rounded-md border border-slate-100 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                <button onclick="deleteAccount('${acc.id}')" class="text-slate-400 hover:text-red-500 p-1 bg-slate-50 rounded-md border border-slate-100 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-end mb-2.5">
+                            <div class="code-text text-3xl font-black text-indigo-600 tracking-[0.2em] code-transition cursor-pointer">------</div>
+                            <button class="copy-action-btn text-slate-400 hover:text-indigo-600 bg-slate-50 p-2 rounded-xl border border-slate-200 mb-1 focus:outline-none transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex-1"><div class="progress-bar bg-indigo-500 h-full rounded-full progress-transition" style="width: 100%;"></div></div>
+                            <span class="time-left text-[11px] font-bold text-slate-500 w-5 text-right shrink-0">30s</span>
+                        </div>
+                    `;
+                    accountsContainer.appendChild(card);
+                    const copyBtn = card.querySelector('.copy-action-btn');
+                    const codeDisplay = card.querySelector('.code-text');
+                    copyBtn.addEventListener('click', () => window.copyCode(copyBtn, codeDisplay.textContent));
+                    codeDisplay.addEventListener('click', () => window.copyCode(copyBtn, codeDisplay.textContent));
+                });
+            }
+            updateAllCodes();
+        }
+
+        function updateAllCodes() {
+            const cards = document.querySelectorAll('.account-card');
+            if (cards.length === 0) return;
+            let MathFloor = Math.floor(Date.now() / 1000);
+            let remaining = 30 - (MathFloor % 30);
+            let percent = (remaining / 30) * 100;
+
+            cards.forEach(card => {
+                const secret = card.getAttribute('data-secret');
+                const codeDisplay = card.querySelector('.code-text');
+                const progressBar = card.querySelector('.progress-bar');
+                const timeLeft = card.querySelector('.time-left');
+                try {
+                    let totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) });
+                    let token = totp.generate();
+                    codeDisplay.textContent = token.slice(0, 3) + ' ' + token.slice(3);
+                    timeLeft.textContent = remaining + 's';
+                    progressBar.style.transition = remaining === 30 ? 'none' : 'width 1s linear, background-color 0.3s ease';
+                    progressBar.style.width = remaining === 30 ? '100%' : percent + '%';
+                    
+                    if (remaining <= 5) {
+                        codeDisplay.className = 'code-text text-3xl font-black text-red-500 tracking-[0.2em] code-transition cursor-pointer';
+                        progressBar.className = 'progress-bar bg-red-500 h-full rounded-full progress-transition';
+                        timeLeft.className = 'time-left text-[11px] font-bold text-red-500 w-5 text-right shrink-0';
+                    } else {
+                        codeDisplay.className = 'code-text text-3xl font-black text-indigo-600 tracking-[0.2em] code-transition cursor-pointer';
+                        progressBar.className = 'progress-bar bg-indigo-500 h-full rounded-full progress-transition';
+                        timeLeft.className = 'time-left text-[11px] font-bold text-slate-500 w-5 text-right shrink-0';
+                    }
+                } catch (err) { codeDisplay.textContent = 'ERROR'; }
+            });
+        }
+        setInterval(updateAllCodes, 1000);
+
+        // QR Scanner Logic
+        const qrModal = document.getElementById('qr-modal');
+        let html5QrcodeScanner = null;
+        document.getElementById('open-scanner-btn').addEventListener('click', () => {
+            qrModal.classList.remove('hidden');
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 220, height: 220 } }, (decodedText) => {
+                qrModal.classList.add('hidden'); html5QrcodeScanner.stop().then(() => html5QrcodeScanner.clear());
+                try {
+                    let parsedURI = OTPAuth.URI.parse(decodedText);
+                    document.getElementById('secret-key').value = parsedURI.secret.base32;
+                    document.getElementById('account-name').value = parsedURI.issuer ? `${parsedURI.issuer} (${parsedURI.label})` : parsedURI.label;
+                    showToast("QR Code Scanned!");
+                } catch(e) { showToast("Invalid QR Code", true); }
+            }).catch(err => { showToast("Camera Access Denied", true); qrModal.classList.add('hidden'); });
+        });
+        document.getElementById('close-scanner-btn').addEventListener('click', () => {
+            qrModal.classList.add('hidden');
+            if(html5QrcodeScanner) html5QrcodeScanner.stop().then(()=>html5QrcodeScanner.clear());
+        });
+    </script>
+</body>
+</html>
+
